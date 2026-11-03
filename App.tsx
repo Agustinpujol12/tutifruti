@@ -29,7 +29,12 @@ export default function App() {
   const [gameCategories, setGameCategories] = useState<string[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [currentLetter, setCurrentLetter] = useState<string | null>(null);
+  const [activeLetter, setActiveLetter] = useState<string | null>(null);
+  
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [roundTime, setRoundTime] = useState<number | null>(null);
+  const roundTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [myTotalScore, setMyTotalScore] = useState(0);
 
   const [isValidating, setIsValidating] = useState(false);
   const [roundData, setRoundData] = useState<any[]>([]);
@@ -39,19 +44,18 @@ export default function App() {
   const [isFinishedGame, setIsFinishedGame] = useState(false);
   const [finalResults, setFinalResults] = useState<any[]>([]);
 
+  const [isHost, setIsHost] = useState(false);
+  
   const answersRef = useRef(answers);
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
 
+  // Referencia para asegurar que no ejecutemos el temporizador doble por el WebSocket
+  const currentLetterRef = useRef(currentLetter);
   useEffect(() => {
-    getPlayerName().then(storedName => {
-      if (storedName) {
-        setName(storedName);
-        setIsRegistered(true);
-      }
-    });
-  }, []);
+    currentLetterRef.current = currentLetter;
+  }, [currentLetter]);
 
   const toggleCategory = (category: string) => {
     setSelectedCategories(prev => prev.includes(category) ? prev.filter(c => c !== category) : [...prev, category]);
@@ -72,11 +76,22 @@ export default function App() {
     setCurrentRound(1);
     setIsFinishedGame(false);
     setFinalResults([]);
+    setIsHost(false);
+    setActiveLetter(null);
+    currentLetterRef.current = null;
+    if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+    setRoundTime(null);
+    setMyTotalScore(0);
   };
 
-  const startCountdownSequence = (finalLetter: string) => {
+  // Parámetro activeGameId añadido para evitar cierres obsoletos en el timer
+  const startCountdownSequence = (finalLetter: string, activeGameId: string) => {
     setCurrentLetter(finalLetter);
+    setActiveLetter(null); // Oculta la letra durante los 5 segundos
     setCountdown(5);
+
+    if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+    setRoundTime(null);
 
     let currentCount = 5;
     const timer = setInterval(() => {
@@ -86,6 +101,28 @@ export default function App() {
       } else {
         clearInterval(timer);
         setCountdown(null);
+        setActiveLetter(finalLetter); // Revela la letra justo al empezar
+        startRoundTimer(60, activeGameId);
+      }
+    }, 1000);
+  };
+
+  // Recibe el ID de la sala directamente para forzar la actualización segura al llegar a 0
+  const startRoundTimer = (duration: number, activeGameId: string) => {
+    setRoundTime(duration);
+    let timeLeft = duration;
+    
+    if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+    
+    roundTimerRef.current = setInterval(() => {
+      timeLeft--;
+      if (timeLeft > 0) {
+        setRoundTime(timeLeft);
+      } else {
+        if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+        setRoundTime(null);
+        // Fuerzo el final automático sin depender del estado global 'gameId'
+        supabase.from('games').update({ status: 'validating' }).eq('id', activeGameId).then();
       }
     }, 1000);
   };
@@ -93,6 +130,7 @@ export default function App() {
   const subscribeToGame = (currentId: string) => {
     supabase.channel(`game-${currentId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${currentId}` }, async (payload) => {
+        
         if (payload.new.status === 'playing') {
           setIsGameStarted(true);
           setIsValidating(false);
@@ -100,17 +138,27 @@ export default function App() {
           setInvalidAnswers({});
           setRoundData([]);
           setCurrentRound(payload.new.current_round || 1);
+          
+          const fetchScore = async () => {
+            const { data } = await supabase.from('game_rounds')
+              .select('total_score')
+              .eq('game_id', currentId)
+              .eq('player_name', name)
+              .single();
+            if (data) setMyTotalScore(data.total_score || 0);
+          };
+          fetchScore();
         }
-        if (payload.new.current_letter) {
-          setCurrentLetter(prev => {
-            if (prev !== payload.new.current_letter) {
-              setTimeout(() => startCountdownSequence(payload.new.current_letter), 0);
-              return payload.new.current_letter;
-            }
-            return prev;
-          });
+        
+        if (payload.new.current_letter && payload.new.current_letter !== currentLetterRef.current) {
+          currentLetterRef.current = payload.new.current_letter;
+          startCountdownSequence(payload.new.current_letter, currentId);
         }
+
         if (payload.new.status === 'validating') {
+          if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+          setRoundTime(null);
+          
           await supabase.from('game_rounds')
             .update({ answers: answersRef.current })
             .eq('game_id', currentId)
@@ -123,6 +171,7 @@ export default function App() {
             setIsValidating(true);
           }, 1500);
         }
+        
         if (payload.new.status === 'finished_game') {
           const { data } = await supabase.from('game_rounds')
             .select('player_name, total_score')
@@ -134,6 +183,7 @@ export default function App() {
           setIsGameStarted(false);
           setIsFinishedGame(true);
         }
+        
         if (payload.new.status === 'finished') {
           handleLeaveGame();
         }
@@ -171,6 +221,7 @@ export default function App() {
     if (game) {
       await supabase.from('game_rounds').insert({ game_id: game.id, player_name: name });
       setGameId(game.id);
+      setIsHost(true);
       setRoomCode(code);
       setGameCategories(game.categories || selectedCategories);
       subscribeToGame(game.id);
@@ -205,9 +256,11 @@ export default function App() {
     setRounds(game.total_rounds);
     setCurrentRound(game.current_round || 1);
     setGameId(game.id);
+    setIsHost(false);
     setRoomCode(code);
     subscribeToGame(game.id); 
 
+    // SOLUCIÓN: Si el invitado llena la sala, fuerza su propio estado local saltándose el retraso del WebSocket
     if (count !== null && count + 1 === game.max_players) {
       const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
       const randomLetter = abc[Math.floor(Math.random() * abc.length)];
@@ -218,8 +271,10 @@ export default function App() {
         used_letters: randomLetter
       }).eq('id', game.id);
 
+      currentLetterRef.current = randomLetter;
       setIsGameStarted(true);
-      startCountdownSequence(randomLetter);
+      setIsValidating(false);
+      startCountdownSequence(randomLetter, game.id);
     }
     setIsLoading(false);
   };
@@ -282,18 +337,19 @@ export default function App() {
     setIsProcessingNext(false);
   };
 
-  // Enrutador de pantallas
   if (isFinishedGame) return <WinnerScreen finalResults={finalResults} onLeave={handleLeaveGame} />;
   
-  if (isValidating) return <ValidationScreen 
+if (isValidating) return <ValidationScreen 
     currentLetter={currentLetter} currentRound={currentRound} rounds={rounds} roundData={roundData} 
     gameCategories={gameCategories} invalidAnswers={invalidAnswers} setInvalidAnswers={setInvalidAnswers} 
     getScore={getScore} handleNextRound={handleNextRound} isProcessingNext={isProcessingNext} handleEndGameEarly={handleEndGameEarly} 
+    isHost={isHost} 
   />;
   
   if (isGameStarted) return <GameScreen 
-    currentLetter={currentLetter} currentRound={currentRound} rounds={rounds} countdown={countdown} 
+    currentLetter={activeLetter} currentRound={currentRound} rounds={rounds} countdown={countdown} 
     gameCategories={gameCategories} answers={answers} setAnswers={setAnswers} handleBasta={handleBasta} handleEndGameEarly={handleEndGameEarly} 
+    roundTime={roundTime} myTotalScore={myTotalScore} 
   />;
   
   if (isRegistered) return <LobbyScreen 
