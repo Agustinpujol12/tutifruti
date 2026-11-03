@@ -1,0 +1,19 @@
+03/11/2026
+
+Configuración del proyecto en React Native (Expo) con TypeScript.
+
+Conexión e integración de base de datos PostgreSQL alojada en Supabase.
+
+Creación del sistema de persistencia local para el nombre de jugador usando AsyncStorage.
+
+Desarrollo de un procedimiento almacenado (RPC) en la base de datos para generar códigos únicos de sala (5 caracteres).
+
+Implementación de la interfaz de configuración (Modal) para selección dinámica de categorías, rondas y límite de jugadores.
+
+Lógica de validación estricta para el ingreso de jugadores (verificación de estado waiting y conteo contra max_players).
+
+Sincronización en tiempo real mediante WebSockets (supabase.channel) para transicionar los clientes a la pantalla de juego simultáneamente.
+
+Renderizado de tablero dinámico que genera inputs de texto basados en el arreglo de categorías guardado en la tabla games.
+
+Función de limpieza de estado local para abandonar partidas y evitar bloqueos de memoria.
