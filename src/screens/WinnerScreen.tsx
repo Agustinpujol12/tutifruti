@@ -1,7 +1,7 @@
 import { Text, View, TouchableOpacity } from 'react-native';
 import { styles } from '../styles/globalStyles';
 
-export const WinnerScreen = ({ finalResults, onLeave }: any) => {
+export const WinnerScreen = ({ finalResults, onLeave, isHost, handleRematch }: any) => {
   const winner = finalResults[0];
   return (
     <View style={styles.container}>
@@ -20,7 +20,17 @@ export const WinnerScreen = ({ finalResults, onLeave }: any) => {
         ))}
       </View>
 
-      <TouchableOpacity style={[styles.primaryButton, { marginTop: 40 }]} onPress={onLeave}>
+      {isHost ? (
+        <TouchableOpacity style={[styles.primaryButton, { marginTop: 40 }]} onPress={handleRematch}>
+          <Text style={styles.buttonText}>Jugar Revancha</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={{ marginTop: 40, padding: 16, alignItems: 'center' }}>
+          <Text style={styles.waitingText}>Esperando a que el creador inicie la revancha...</Text>
+        </View>
+      )}
+
+      <TouchableOpacity style={[styles.secondaryButton, { marginTop: isHost ? 10 : 0 }]} onPress={onLeave}>
         <Text style={styles.buttonText}>Volver al Menú</Text>
       </TouchableOpacity>
     </View>

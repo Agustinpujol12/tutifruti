@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 import { savePlayerName, getPlayerName } from './lib/storage';
 import { supabase } from './lib/supabase';
+import * as Haptics from 'expo-haptics'; // NUEVO: Importación de vibraciones
 
 // Importación de las pantallas refactorizadas
 import { LoginScreen } from './src/screens/LoginScreen';
@@ -93,15 +94,17 @@ export default function App() {
     if (roundTimerRef.current) clearInterval(roundTimerRef.current);
     setRoundTime(null);
 
-    let currentCount = 5;
+let currentCount = 5;
     const timer = setInterval(() => {
       currentCount--;
       if (currentCount > 0) {
         setCountdown(currentCount);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); // Latido de espera
       } else {
         clearInterval(timer);
         setCountdown(null);
-        setActiveLetter(finalLetter); // Revela la letra justo al empezar
+        setActiveLetter(finalLetter); 
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); // Impacto de ¡ARRANCA!
         startRoundTimer(60, activeGameId);
       }
     }, 1000);
@@ -114,14 +117,17 @@ export default function App() {
     
     if (roundTimerRef.current) clearInterval(roundTimerRef.current);
     
-    roundTimerRef.current = setInterval(() => {
+roundTimerRef.current = setInterval(() => {
       timeLeft--;
       if (timeLeft > 0) {
         setRoundTime(timeLeft);
+        // Vibración de alerta cuando quedan 5 segundos o menos
+        if (timeLeft <= 5) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); 
+        }
       } else {
         if (roundTimerRef.current) clearInterval(roundTimerRef.current);
         setRoundTime(null);
-        // Fuerzo el final automático sin depender del estado global 'gameId'
         supabase.from('games').update({ status: 'validating' }).eq('id', activeGameId).then();
       }
     }, 1000);
@@ -131,9 +137,10 @@ export default function App() {
     supabase.channel(`game-${currentId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${currentId}` }, async (payload) => {
         
-        if (payload.new.status === 'playing') {
+if (payload.new.status === 'playing') {
           setIsGameStarted(true);
           setIsValidating(false);
+          setIsFinishedGame(false); // NUEVO: Apaga la pantalla de ganador
           setAnswers({});
           setInvalidAnswers({});
           setRoundData([]);
@@ -155,10 +162,13 @@ export default function App() {
           startCountdownSequence(payload.new.current_letter, currentId);
         }
 
-        if (payload.new.status === 'validating') {
+if (payload.new.status === 'validating') {
+          // Impacto físico violento para AMBOS celulares al mismo tiempo
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+
           if (roundTimerRef.current) clearInterval(roundTimerRef.current);
           setRoundTime(null);
-          
+
           await supabase.from('game_rounds')
             .update({ answers: answersRef.current })
             .eq('game_id', currentId)
@@ -337,9 +347,29 @@ export default function App() {
     setIsProcessingNext(false);
   };
 
-  if (isFinishedGame) return <WinnerScreen finalResults={finalResults} onLeave={handleLeaveGame} />;
+
+const handleRematch = async () => {
+    // 1. Resetea los puntos de todos los jugadores en la base de datos
+    await supabase.from('game_rounds')
+      .update({ total_score: 0, answers: {} })
+      .eq('game_id', gameId);
+
+    // 2. Genera una letra nueva
+    const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const randomLetter = abc[Math.floor(Math.random() * abc.length)];
+
+    // 3. Reinicia la partida a la ronda 1 y dispara el WebSocket para todos
+    await supabase.from('games').update({ 
+      status: 'playing', 
+      current_round: 1, 
+      used_letters: randomLetter, 
+      current_letter: randomLetter 
+    }).eq('id', gameId);
+  };
+
+  if (isFinishedGame) return <WinnerScreen finalResults={finalResults} onLeave={handleLeaveGame} isHost={isHost} handleRematch={handleRematch} />;
   
-if (isValidating) return <ValidationScreen 
+  if (isValidating) return <ValidationScreen 
     currentLetter={currentLetter} currentRound={currentRound} rounds={rounds} roundData={roundData} 
     gameCategories={gameCategories} invalidAnswers={invalidAnswers} setInvalidAnswers={setInvalidAnswers} 
     getScore={getScore} handleNextRound={handleNextRound} isProcessingNext={isProcessingNext} handleEndGameEarly={handleEndGameEarly} 

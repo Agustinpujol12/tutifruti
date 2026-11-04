@@ -34,5 +34,10 @@ export const styles = StyleSheet.create({
   inputLabel: { color: '#a1a1aa', fontSize: 12, fontWeight: 'bold', marginBottom: 5, letterSpacing: 1 },
   gameInput: { backgroundColor: '#18181b', borderWidth: 1, borderColor: '#27272a', borderRadius: 12, padding: 12, color: '#ffffff', fontSize: 16 },
   waitingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', width: '100%' },
-  spinLetter: { fontSize: 90, fontWeight: '900', color: '#6366f1', marginBottom: 10 }
+  spinLetter: { fontSize: 90, fontWeight: '900', color: '#6366f1', marginBottom: 10 },
+  fabButton: { position: 'absolute', bottom: 30, right: 24, backgroundColor: '#6366f1', width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4, zIndex: 100 },
+  fabButtonDisabled: { backgroundColor: '#3f3f46' },
+  fabText: { color: '#ffffff', fontWeight: '900', fontSize: 12, textAlign: 'center', letterSpacing: 1 },
+  cancelCrossBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', backgroundColor: '#ef4444', borderRadius: 18 },
+  cancelCrossText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
 });

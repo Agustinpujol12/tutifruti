@@ -1,5 +1,7 @@
 03/11/2026
 
+Commit 1
+
 - Configuración del proyecto en React Native (Expo) con TypeScript.
 - Conexión e integración de base de datos PostgreSQL alojada en Supabase.
 - Creación del sistema de persistencia local para el nombre de jugador usando AsyncStorage.
@@ -9,5 +11,35 @@
 - Sincronización en tiempo real mediante WebSockets (supabase.channel) para transicionar los clientes a la pantalla de juego simultáneamente.
 - Renderizado de tablero dinámico que genera inputs de texto basados en el arreglo de categorías guardado en la tabla games.
 - Función de limpieza de estado local para abandonar partidas y evitar bloqueos de memoria.
+
+Commit 2
+
 - Generación automática de letra aleatoria sincronizada en la base de datos al completarse el cupo de la sala.
 - Implementación de la secuencia de cuenta regresiva sincronizada (5 a 1) previa al inicio de cada partida continua.
+
+Commit 3
+
+
+- Modificación del esquema de base de datos para soportar JSONB, almacenando respuestas dinámicas por ronda.
+- Implementación de la función "¡Basta para mí!", utilizando referencias mutables (`useRef`) para resolver cierres obsoletos (stale closures) y capturar el estado exacto del texto al momento del toque.
+- Creación de la pantalla de validación cruzada (Pantalla 4), permitiendo la revisión manual de las palabras ingresadas por los oponentes.
+- Desarrollo del motor de puntuación automática (0, 10, 20 pts) basado en condicionales cruzados, con soporte para tachado manual (invalidación) de respuestas erróneas.
+- Adición de columnas en la base de datos (`current_round`, `total_score`, `used_letters`) para gestionar el historial de la partida.
+- Construcción de la lógica de iteración de rondas múltiples, bloqueando la repetición de letras ya sorteadas mediante un bucle de comprobación.
+- Implementación de la pantalla final de victoria (Pantalla 5), que renderiza la clasificación (ranking) de todos los jugadores basada en los puntos acumulados.
+- Sincronización del evento "Abandonar Partida" o finalización del juego, asegurando que todos los clientes en el WebSocket sean redirigidos simultáneamente al Lobby.
+
+Commit 4 
+
+- Refactorización de la arquitectura del proyecto, transicionando de un componente monolítico a un sistema modular separando vistas en `src/screens` y estilos en `src/styles`.
+- Transformación de `App.tsx` en un enrutador de estados centralizado para gestionar la navegación entre las fases del juego (Login, Lobby, Juego, Validación, Ganador).
+- Implementación de roles de sesión (`isHost`) asignados durante la creación/unión de salas para restringir acciones críticas.
+- Bloqueo de concurrencia en el avance de rondas: el control de "Siguiente Ronda" y "Finalizar Partida" es exclusivo del anfitrión, sincronizando a los clientes invitados mediante vistas de espera pasivas.
+
+Commit 5
+
+- Integración de un temporizador de 60 segundos por ronda ejecutado localmente, forzando la validación automática al llegar a cero.
+- Implementación de un bloqueo preventivo (cooldown) de 10 segundos en el botón "¡Basta para mí!" al inicio de cada ronda.
+- Adición de un panel HUD de estadísticas en la pantalla de juego para monitorizar la ronda actual, los segundos restantes y el puntaje acumulado en tiempo real.
+- Resolución de cierres obsoletos (stale closures) y condiciones de carrera en los temporizadores pasando el ID de la sala directamente como parámetro y utilizando useRef para la validación de eventos WebSocket, garantizando sincronización exacta entre creador e invitado.
+- Separación del estado de la letra (`currentLetter` vs `activeLetter`) para ocultarla bajo un signo de interrogación durante el conteo de 5 segundos, evitando ventajas anticipadas.
