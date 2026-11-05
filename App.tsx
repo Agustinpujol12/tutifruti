@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 import { savePlayerName, getPlayerName } from './lib/storage';
 import { supabase } from './lib/supabase';
-import * as Haptics from 'expo-haptics'; // NUEVO: Importación de vibraciones
+import * as Haptics from 'expo-haptics';
 
 // Importación de las pantallas refactorizadas
 import { LoginScreen } from './src/screens/LoginScreen';
@@ -23,7 +23,9 @@ export default function App() {
   const [showModal, setShowModal] = useState(false);
   const [maxPlayers, setMaxPlayers] = useState(2);
   const [rounds, setRounds] = useState(3);
-  const allCategories = ['colores', 'animal', 'pais', 'nombres_m', 'nombres_f'];
+  
+  // SOLUCIÓN: Las 5 categorías estandarizadas exactas para la base de datos
+  const allCategories = ['paises', 'colores', 'animales', 'frutas_verduras', 'partes_cuerpo'];
   const [selectedCategories, setSelectedCategories] = useState<string[]>(allCategories);
 
   const [currentRound, setCurrentRound] = useState(1);
@@ -39,20 +41,23 @@ export default function App() {
 
   const [isValidating, setIsValidating] = useState(false);
   const [roundData, setRoundData] = useState<any[]>([]);
-  const [invalidAnswers, setInvalidAnswers] = useState<Record<string, boolean>>({});
   const [isProcessingNext, setIsProcessingNext] = useState(false);
   
   const [isFinishedGame, setIsFinishedGame] = useState(false);
   const [finalResults, setFinalResults] = useState<any[]>([]);
 
   const [isHost, setIsHost] = useState(false);
-  
+  // NUEVO: Referencia para evitar el estado fantasma en el WebSocket
+  const isHostRef = useRef(isHost);
+  useEffect(() => {
+    isHostRef.current = isHost;
+  }, [isHost]);
+
   const answersRef = useRef(answers);
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
 
-  // Referencia para asegurar que no ejecutemos el temporizador doble por el WebSocket
   const currentLetterRef = useRef(currentLetter);
   useEffect(() => {
     currentLetterRef.current = currentLetter;
@@ -73,7 +78,6 @@ export default function App() {
     setCountdown(null);
     setIsValidating(false);
     setRoundData([]);
-    setInvalidAnswers({});
     setCurrentRound(1);
     setIsFinishedGame(false);
     setFinalResults([]);
@@ -85,50 +89,51 @@ export default function App() {
     setMyTotalScore(0);
   };
 
-  // Parámetro activeGameId añadido para evitar cierres obsoletos en el timer
   const startCountdownSequence = (finalLetter: string, activeGameId: string) => {
     setCurrentLetter(finalLetter);
-    setActiveLetter(null); // Oculta la letra durante los 5 segundos
+    setActiveLetter(null); 
     setCountdown(5);
 
     if (roundTimerRef.current) clearInterval(roundTimerRef.current);
     setRoundTime(null);
 
-let currentCount = 5;
+    let currentCount = 5;
     const timer = setInterval(() => {
       currentCount--;
       if (currentCount > 0) {
         setCountdown(currentCount);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); // Latido de espera
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       } else {
         clearInterval(timer);
         setCountdown(null);
         setActiveLetter(finalLetter); 
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); // Impacto de ¡ARRANCA!
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         startRoundTimer(60, activeGameId);
       }
     }, 1000);
   };
 
-  // Recibe el ID de la sala directamente para forzar la actualización segura al llegar a 0
   const startRoundTimer = (duration: number, activeGameId: string) => {
     setRoundTime(duration);
     let timeLeft = duration;
     
     if (roundTimerRef.current) clearInterval(roundTimerRef.current);
     
-roundTimerRef.current = setInterval(() => {
+    roundTimerRef.current = setInterval(() => {
       timeLeft--;
       if (timeLeft > 0) {
         setRoundTime(timeLeft);
-        // Vibración de alerta cuando quedan 5 segundos o menos
         if (timeLeft <= 5) {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); 
         }
       } else {
         if (roundTimerRef.current) clearInterval(roundTimerRef.current);
         setRoundTime(null);
-        supabase.from('games').update({ status: 'validating' }).eq('id', activeGameId).then();
+        
+        // CRÍTICO: Solo el Creador avisa a la base de datos que el tiempo terminó
+        if (isHostRef.current) {
+          supabase.from('games').update({ status: 'validating' }).eq('id', activeGameId).then();
+        }
       }
     }, 1000);
   };
@@ -137,12 +142,11 @@ roundTimerRef.current = setInterval(() => {
     supabase.channel(`game-${currentId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${currentId}` }, async (payload) => {
         
-if (payload.new.status === 'playing') {
+        if (payload.new.status === 'playing') {
           setIsGameStarted(true);
           setIsValidating(false);
-          setIsFinishedGame(false); // NUEVO: Apaga la pantalla de ganador
+          setIsFinishedGame(false); 
           setAnswers({});
-          setInvalidAnswers({});
           setRoundData([]);
           setCurrentRound(payload.new.current_round || 1);
           
@@ -162,40 +166,58 @@ if (payload.new.status === 'playing') {
           startCountdownSequence(payload.new.current_letter, currentId);
         }
 
-if (payload.new.status === 'validating') {
-          // Impacto físico violento para AMBOS celulares al mismo tiempo
+       if (payload.new.status === 'validating') {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-
+          
           if (roundTimerRef.current) clearInterval(roundTimerRef.current);
           setRoundTime(null);
+          
+          // Filtro de tildes: Convierte "ratón" a "raton" antes de enviar a Supabase
+          const cleanAnswers = Object.keys(answersRef.current).reduce((acc: any, key) => {
+            const val = answersRef.current[key] || '';
+            acc[key] = val.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return acc;
+          }, {});
 
           await supabase.from('game_rounds')
-            .update({ answers: answersRef.current })
+            .update({ answers: cleanAnswers })
             .eq('game_id', currentId)
             .eq('player_name', name);
           
-          setTimeout(async () => {
-            const { data } = await supabase.from('game_rounds').select('player_name, answers').eq('game_id', currentId);
-            if (data) setRoundData(data);
-            setIsGameStarted(false);
-            setIsValidating(true);
+setTimeout(async () => {
+            // CRÍTICO: Usar la referencia garantiza que el Creador sea reconocido y ejecute el cálculo solo 1 vez
+            if (isHostRef.current) {
+              await supabase.rpc('calculate_round_scores', { 
+                p_game_id: currentId, 
+                p_letter: currentLetterRef.current 
+              });
+            }
+            
+            setTimeout(async () => {
+              const { data } = await supabase.from('game_rounds')
+                .select('player_name, answers, scores, total_score')
+                .eq('game_id', currentId);
+                
+              if (data) {
+                setRoundData(data);
+                const myData = data.find(d => d.player_name === name);
+                if (myData) setMyTotalScore(myData.total_score || 0);
+              }
+              setIsGameStarted(false);
+              setIsValidating(true);
+            }, 1000);
           }, 1500);
         }
         
-        if (payload.new.status === 'finished_game') {
+        if (payload.new.status === 'finished') {
+          setIsGameStarted(false);
+          setIsValidating(false);
+          setIsFinishedGame(true);
           const { data } = await supabase.from('game_rounds')
             .select('player_name, total_score')
             .eq('game_id', currentId)
             .order('total_score', { ascending: false });
           if (data) setFinalResults(data);
-          
-          setIsValidating(false);
-          setIsGameStarted(false);
-          setIsFinishedGame(true);
-        }
-        
-        if (payload.new.status === 'finished') {
-          handleLeaveGame();
         }
       })
       .subscribe();
@@ -270,7 +292,6 @@ if (payload.new.status === 'validating') {
     setRoomCode(code);
     subscribeToGame(game.id); 
 
-    // SOLUCIÓN: Si el invitado llena la sala, fuerza su propio estado local saltándose el retraso del WebSocket
     if (count !== null && count + 1 === game.max_players) {
       const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
       const randomLetter = abc[Math.floor(Math.random() * abc.length)];
@@ -297,68 +318,48 @@ if (payload.new.status === 'validating') {
     await supabase.from('games').update({ status: 'finished' }).eq('id', gameId);
   };
 
-  const getScore = (pName: string, cat: string) => {
-    const pAns = roundData.find(p => p.player_name === pName)?.answers?.[cat];
-    const isPValid = pAns && pAns.trim().length > 0 && !invalidAnswers[`${pName}-${cat}`];
-    
-    if (!isPValid) return 0;
-
-    const opponents = roundData.filter(p => p.player_name !== pName);
-    const anyOpponentValid = opponents.some(opp => {
-      const oAns = opp.answers?.[cat];
-      return oAns && oAns.trim().length > 0 && !invalidAnswers[`${opp.player_name}-${cat}`];
-    });
-
-    return anyOpponentValid ? 10 : 20; 
-  };
-
   const handleNextRound = async () => {
     setIsProcessingNext(true);
-    const { data: g } = await supabase.from('games').select('status, current_round, total_rounds, used_letters, current_letter').eq('id', gameId).single();
-    if (!g || g.status !== 'validating') return; 
-
-    for (const p of roundData) {
-      const roundScore = gameCategories.reduce((acc, cat) => acc + getScore(p.player_name, cat), 0);
-      const { data: currentP } = await supabase.from('game_rounds').select('total_score').eq('game_id', gameId).eq('player_name', p.player_name).single();
-      const newTotal = (currentP?.total_score || 0) + roundScore;
-      await supabase.from('game_rounds').update({ total_score: newTotal, answers: {} }).eq('game_id', gameId).eq('player_name', p.player_name);
+    const { data: g } = await supabase.from('games')
+      .select('status, current_round, total_rounds, used_letters')
+      .eq('id', gameId)
+      .single();
+      
+    if (!g || g.status !== 'validating') {
+      setIsProcessingNext(false);
+      return; 
     }
 
-    if (g.current_round >= g.total_rounds) {
-      await supabase.from('games').update({ status: 'finished_game' }).eq('id', gameId);
-    } else {
-      const nextRoundNum = g.current_round + 1;
-      const updatedUsed = (g.used_letters || '') + g.current_letter;
-      
-      let nextLetter = '';
-      const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-      do {
-        nextLetter = abc[Math.floor(Math.random() * abc.length)];
-      } while (updatedUsed.includes(nextLetter));
+    await supabase.from('game_rounds').update({ answers: {} }).eq('game_id', gameId);
 
+    if (g.current_round < g.total_rounds) {
+      const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      let newLetter = "";
+      while (!newLetter || (g.used_letters && g.used_letters.includes(newLetter))) {
+        newLetter = abc[Math.floor(Math.random() * abc.length)];
+      }
+      
       await supabase.from('games').update({ 
         status: 'playing', 
-        current_round: nextRoundNum, 
-        used_letters: updatedUsed, 
-        current_letter: nextLetter 
+        current_round: g.current_round + 1, 
+        used_letters: g.used_letters + newLetter, 
+        current_letter: newLetter 
       }).eq('id', gameId);
+    } else {
+      await supabase.from('games').update({ status: 'finished' }).eq('id', gameId);
     }
     
     setIsProcessingNext(false);
   };
 
-
-const handleRematch = async () => {
-    // 1. Resetea los puntos de todos los jugadores en la base de datos
+  const handleRematch = async () => {
     await supabase.from('game_rounds')
       .update({ total_score: 0, answers: {} })
       .eq('game_id', gameId);
 
-    // 2. Genera una letra nueva
     const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     const randomLetter = abc[Math.floor(Math.random() * abc.length)];
 
-    // 3. Reinicia la partida a la ronda 1 y dispara el WebSocket para todos
     await supabase.from('games').update({ 
       status: 'playing', 
       current_round: 1, 
@@ -371,9 +372,8 @@ const handleRematch = async () => {
   
   if (isValidating) return <ValidationScreen 
     currentLetter={currentLetter} currentRound={currentRound} rounds={rounds} roundData={roundData} 
-    gameCategories={gameCategories} invalidAnswers={invalidAnswers} setInvalidAnswers={setInvalidAnswers} 
-    getScore={getScore} handleNextRound={handleNextRound} isProcessingNext={isProcessingNext} handleEndGameEarly={handleEndGameEarly} 
-    isHost={isHost} 
+    gameCategories={gameCategories} handleNextRound={handleNextRound} isProcessingNext={isProcessingNext} 
+    handleEndGameEarly={handleEndGameEarly} isHost={isHost} 
   />;
   
   if (isGameStarted) return <GameScreen 

@@ -43,3 +43,18 @@ Commit 5
 - Adición de un panel HUD de estadísticas en la pantalla de juego para monitorizar la ronda actual, los segundos restantes y el puntaje acumulado en tiempo real.
 - Resolución de cierres obsoletos (stale closures) y condiciones de carrera en los temporizadores pasando el ID de la sala directamente como parámetro y utilizando useRef para la validación de eventos WebSocket, garantizando sincronización exacta entre creador e invitado.
 - Separación del estado de la letra (`currentLetter` vs `activeLetter`) para ocultarla bajo un signo de interrogación durante el conteo de 5 segundos, evitando ventajas anticipadas.
+
+Commit 6 
+
+- Implementación de `KeyboardAvoidingView` y rediseño de interfaz en `GameScreen`, añadiendo un botón flotante (FAB) para evitar que el teclado nativo bloquee la acción principal.
+- Integración de bucle de revancha (Rematch) controlado por el Host, permitiendo resetear puntajes y generar nuevas letras sin destruir la sala ni desconectar el WebSocket.
+- Inyección de "Game Feel" mediante `expo-haptics`, sincronizando patrones de vibración nativos con el reloj de tensión (últimos 5 segundos) y un impacto físico simultáneo por red cuando un jugador detiene la ronda.
+
+Commit 7
+
+- Creación e integración de tabla de diccionario y RPC en Supabase para cálculo de reglas (20/10/5).
+- Normalización de palabras (eliminación de tildes/mayúsculas) en el frontend previo envío.
+- Resolución de 'stale closures' implementando isHostRef en WebSockets y temporizadores.
+- Corrección de puntaje doble asignando autoridad exclusiva del timeout al Host.
+- Refactor de ValidationScreen a vista estática de resultados calculados.
+- Estandarización del array estricto de las 5 categorías MVP.
