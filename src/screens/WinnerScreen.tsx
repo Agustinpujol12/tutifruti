@@ -1,38 +1,76 @@
-import { Text, View, TouchableOpacity } from 'react-native';
+import { Text, View, TouchableOpacity, ScrollView } from 'react-native';
 import { styles } from '../styles/globalStyles';
 
 export const WinnerScreen = ({ finalResults, onLeave, isHost, handleRematch }: any) => {
-  const winner = finalResults[0];
+  // 1. Interceptar victoria por abandono (minimizar la app)
+  const forfeitData = finalResults?.find((r: any) => r.isForfeit);
+
+  if (forfeitData) {
+    return (
+      <View style={styles.container}>
+        <Text style={[styles.title, { fontSize: 32, color: '#ef4444' }]}>¡PARTIDA CANCELADA!</Text>
+        <Text style={{ fontSize: 18, color: '#a1a1aa', textAlign: 'center', marginBottom: 30 }}>
+          <Text style={{ fontWeight: 'bold' }}>{forfeitData.forfeiter}</Text> minimizó el juego por más de 5 segundos.
+        </Text>
+        <Text style={{ color: '#10b981', fontSize: 24, fontWeight: 'bold', marginBottom: 40, textAlign: 'center' }}>
+          {forfeitData.forfeiter === "Tú" ? "Pierdes por abandono." : "Victoria por abandono."}
+        </Text>
+        
+        {isHost && (
+          <TouchableOpacity style={[styles.primaryButton, { marginBottom: 15 }]} onPress={handleRematch}>
+            <Text style={styles.buttonText}>Jugar Revancha</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity style={styles.secondaryButton} onPress={onLeave}>
+          <Text style={styles.buttonText}>Salir al Menú</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // 2. Pantalla de resultados estándar
   return (
     <View style={styles.container}>
-      <Text style={[styles.title, { color: '#10b981', fontSize: 40 }]}>¡PARTIDA FINALIZADA!</Text>
-      <Text style={styles.waitingSubtext}>Ganador indiscutido:</Text>
-      <Text style={[styles.code, { marginBottom: 20 }]}>{winner?.player_name}</Text>
+      <Text style={[styles.title, { fontSize: 36, color: '#10b981' }]}>¡RESULTADOS!</Text>
       
-      <View style={{ width: '100%', marginTop: 10 }}>
-        {finalResults.map((p: any, index: number) => (
-          <View key={index} style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#18181b', padding: 20, borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: index === 0 ? '#6366f1' : '#27272a' }}>
-            <Text style={[styles.buttonText, { color: index === 0 ? '#6366f1' : '#fff' }]}>
-              {index + 1}. {p.player_name}
+      <ScrollView style={{ flex: 1, width: '100%', marginTop: 20 }} showsVerticalScrollIndicator={false}>
+        {finalResults?.map((player: any, index: number) => (
+          <View key={index} style={{ 
+            backgroundColor: index === 0 ? '#3f3f46' : '#18181b', 
+            padding: 20, 
+            borderRadius: 12, 
+            marginBottom: 15,
+            borderWidth: index === 0 ? 2 : 1,
+            borderColor: index === 0 ? '#f59e0b' : '#27272a',
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ fontSize: 24, fontWeight: 'bold', color: index === 0 ? '#f59e0b' : '#a1a1aa', marginRight: 15 }}>
+                #{index + 1}
+              </Text>
+              <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#fff' }}>
+                {player.player_name}
+              </Text>
+            </View>
+            <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#10b981' }}>
+              {player.total_score} pts
             </Text>
-            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 18 }}>{p.total_score} pts</Text>
           </View>
         ))}
-      </View>
+      </ScrollView>
 
-      {isHost ? (
-        <TouchableOpacity style={[styles.primaryButton, { marginTop: 40 }]} onPress={handleRematch}>
-          <Text style={styles.buttonText}>Jugar Revancha</Text>
+      <View style={{ width: '100%', marginTop: 20 }}>
+        {isHost && (
+          <TouchableOpacity style={[styles.primaryButton, { marginBottom: 15 }]} onPress={handleRematch}>
+            <Text style={styles.buttonText}>Jugar Revancha</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity style={styles.secondaryButton} onPress={onLeave}>
+          <Text style={styles.buttonText}>Salir al Menú</Text>
         </TouchableOpacity>
-      ) : (
-        <View style={{ marginTop: 40, padding: 16, alignItems: 'center' }}>
-          <Text style={styles.waitingText}>Esperando a que el creador inicie la revancha...</Text>
-        </View>
-      )}
-
-      <TouchableOpacity style={[styles.secondaryButton, { marginTop: isHost ? 10 : 0 }]} onPress={onLeave}>
-        <Text style={styles.buttonText}>Volver al Menú</Text>
-      </TouchableOpacity>
+      </View>
     </View>
   );
 };

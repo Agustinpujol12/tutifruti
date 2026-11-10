@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Alert } from 'react-native';
+import { AppState, AppStateStatus } from 'react-native'; // Añade esto a tus otras importaciones (Text, View, etc.)
+import { Alert } from 'react-native'; // Asegúrate de importar AppStateimport { savePlayerName, getPlayerName } from './lib/storage';
 import { savePlayerName, getPlayerName } from './lib/storage';
 import { supabase } from './lib/supabase';
 import * as Haptics from 'expo-haptics';
@@ -67,7 +68,39 @@ export default function App() {
     setSelectedCategories(prev => prev.includes(category) ? prev.filter(c => c !== category) : [...prev, category]);
   };
 
-  const handleLeaveGame = () => {
+  const isGameStartedRef = useRef(isGameStarted);
+useEffect(() => { isGameStartedRef.current = isGameStarted; }, [isGameStarted]);
+
+const isValidatingRef = useRef(isValidating);
+useEffect(() => { isValidatingRef.current = isValidating; }, [isValidating]);
+
+useEffect(() => {
+    const subscription = AppState.addEventListener('change', async (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active' && gameId) {
+        const { data } = await supabase.from('games')
+          .select('status, forfeit_player')
+          .eq('id', gameId)
+          .single();
+          
+        if (data && data.status === 'forfeit') {
+          if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+          setRoundTime(null);
+          setCountdown(null);
+          setIsGameStarted(false);
+          setIsValidating(false);
+          setIsFinishedGame(true);
+          setFinalResults([{ isForfeit: true, forfeiter: data.forfeit_player }]);
+        }
+      }
+    });
+
+    return () => subscription.remove();
+  }, [gameId]);
+
+ const handleLeaveGame = async () => { // Asegúrate de agregar 'async'
+    // CRÍTICO: Destruye el canal de Presence y Postgres para evitar cruces en nuevas partidas
+    await supabase.removeAllChannels(); 
+    
     setRoomCode('');
     setJoinCode('');
     setGameId('');
@@ -114,32 +147,72 @@ export default function App() {
   };
 
   const startRoundTimer = (duration: number, activeGameId: string) => {
+    const endTime = Date.now() + duration * 1000;
     setRoundTime(duration);
-    let timeLeft = duration;
     
     if (roundTimerRef.current) clearInterval(roundTimerRef.current);
     
-    roundTimerRef.current = setInterval(() => {
-      timeLeft--;
+    roundTimerRef.current = setInterval(async () => {
+      const now = Date.now();
+      const timeLeft = Math.max(0, Math.ceil((endTime - now) / 1000));
+      
       if (timeLeft > 0) {
         setRoundTime(timeLeft);
         if (timeLeft <= 5) {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); 
         }
       } else {
+        // Detener el reloj inmediatamente para evitar que envíe múltiples órdenes
         if (roundTimerRef.current) clearInterval(roundTimerRef.current);
         setRoundTime(null);
         
-        // CRÍTICO: Solo el Creador avisa a la base de datos que el tiempo terminó
+        // CRÍTICO: Esperar la confirmación de Supabase (await) en lugar de un .then() vacío
         if (isHostRef.current) {
-          supabase.from('games').update({ status: 'validating' }).eq('id', activeGameId).then();
+          const { error } = await supabase
+            .from('games')
+            .update({ status: 'validating' })
+            .eq('id', activeGameId);
+            
+          if (error) console.error("Fallo crítico al cerrar ronda:", error);
         }
       }
-    }, 1000);
+    }, 500);
   };
 
-  const subscribeToGame = (currentId: string) => {
-    supabase.channel(`game-${currentId}`)
+const subscribeToGame = (currentId: string) => {
+    let disconnectTimer: NodeJS.Timeout | null = null;
+
+    // 1. Configuramos el canal para que rastree la "Presencia" usando el nombre del jugador
+    const channel = supabase.channel(`game-${currentId}`, {
+      config: { presence: { key: name } }
+    });
+
+    channel
+      // 2. Escuchamos quién entra y sale en tiempo real
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const activeCount = Object.keys(state).length;
+
+        // Si el juego está corriendo y falta un jugador...
+        if (isGameStartedRef.current && !isValidatingRef.current && activeCount < maxPlayers) {
+          if (!disconnectTimer) {
+            disconnectTimer = setTimeout(async () => {
+              // Tu celular ejecuta el Forfeit porque el oponente no volvió a tiempo
+              await supabase.from('games').update({ 
+                status: 'forfeit', 
+                forfeit_player: 'El oponente' 
+              }).eq('id', currentId);
+            }, 5000);
+          }
+        } else {
+          // Si el jugador reconecta a tiempo o la partida no empezó, abortamos el temporizador
+          if (disconnectTimer) {
+            clearTimeout(disconnectTimer);
+            disconnectTimer = null;
+          }
+        }
+      })
+      // 3. Tus estados de base de datos intactos
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${currentId}` }, async (payload) => {
         
         if (payload.new.status === 'playing') {
@@ -166,13 +239,12 @@ export default function App() {
           startCountdownSequence(payload.new.current_letter, currentId);
         }
 
-       if (payload.new.status === 'validating') {
+        if (payload.new.status === 'validating') {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           
           if (roundTimerRef.current) clearInterval(roundTimerRef.current);
           setRoundTime(null);
           
-          // Filtro de tildes: Convierte "ratón" a "raton" antes de enviar a Supabase
           const cleanAnswers = Object.keys(answersRef.current).reduce((acc: any, key) => {
             const val = answersRef.current[key] || '';
             acc[key] = val.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -184,8 +256,7 @@ export default function App() {
             .eq('game_id', currentId)
             .eq('player_name', name);
           
-setTimeout(async () => {
-            // CRÍTICO: Usar la referencia garantiza que el Creador sea reconocido y ejecute el cálculo solo 1 vez
+          setTimeout(async () => {
             if (isHostRef.current) {
               await supabase.rpc('calculate_round_scores', { 
                 p_game_id: currentId, 
@@ -208,6 +279,16 @@ setTimeout(async () => {
             }, 1000);
           }, 1500);
         }
+
+        if (payload.new.status === 'forfeit') {
+          if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+          setRoundTime(null);
+          setCountdown(null);
+          setIsGameStarted(false);
+          setIsValidating(false);
+          setIsFinishedGame(true);
+          setFinalResults([{ isForfeit: true, forfeiter: payload.new.forfeit_player }]);
+        }
         
         if (payload.new.status === 'finished') {
           setIsGameStarted(false);
@@ -220,7 +301,12 @@ setTimeout(async () => {
           if (data) setFinalResults(data);
         }
       })
-      .subscribe();
+      // 4. Iniciar canal y enviar presencia
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ player: name });
+        }
+      });
   };
 
   const handleRegister = async () => {
