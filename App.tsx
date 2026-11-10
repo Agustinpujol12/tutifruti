@@ -456,11 +456,32 @@ const subscribeToGame = (currentId: string) => {
 
   if (isFinishedGame) return <WinnerScreen finalResults={finalResults} onLeave={handleLeaveGame} isHost={isHost} handleRematch={handleRematch} />;
   
-  if (isValidating) return <ValidationScreen 
-    currentLetter={currentLetter} currentRound={currentRound} rounds={rounds} roundData={roundData} 
-    gameCategories={gameCategories} handleNextRound={handleNextRound} isProcessingNext={isProcessingNext} 
-    handleEndGameEarly={handleEndGameEarly} isHost={isHost} 
-  />;
+  if (isValidating) return <ValidationScreen
+  currentLetter={currentLetterRef.current}
+  currentRound={currentRound}
+  rounds={rounds}
+  roundData={roundData}
+  gameCategories={allCategories}
+  handleNextRound={handleNextRound}
+  isProcessingNext={isProcessingNext}
+  handleEndGameEarly={handleEndGameEarly}
+  isHost={isHostRef.current}
+  
+  // NUEVAS PROPS:
+currentId={gameId}
+  name={name}
+  refreshData={async () => {
+    // Esta función recarga los puntos si una palabra es aprobada por votación
+    const { data } = await supabase.from('game_rounds')
+      .select('player_name, answers, scores, total_score')
+      .eq('game_id', gameId);
+    if (data) {
+      setRoundData(data);
+      const myData = data.find(d => d.player_name === name);
+      if (myData) setMyTotalScore(myData.total_score || 0);
+    }
+  }}
+/>
   
   if (isGameStarted) return <GameScreen 
     currentLetter={activeLetter} currentRound={currentRound} rounds={rounds} countdown={countdown} 
