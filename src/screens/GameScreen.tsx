@@ -1,9 +1,12 @@
 import { Text, View, TextInput, TouchableOpacity, KeyboardAvoidingView, ScrollView, Platform, Alert } from 'react-native';
+import React, { useRef } from 'react';
 import { styles } from '../styles/globalStyles';
 
 export const GameScreen = ({
   currentLetter, currentRound, rounds, countdown, gameCategories, answers, setAnswers, handleBasta, handleEndGameEarly, roundTime, myTotalScore
 }: any) => {
+  // 1. Inicializamos la referencia para controlar los saltos del teclado
+const inputRefs = useRef<any[]>([]);
   const isBastaLocked = roundTime !== null && roundTime > 50;
   const lockedSeconds = roundTime !== null ? roundTime - 50 : 0;
 
@@ -61,7 +64,8 @@ export const GameScreen = ({
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.boardContainer}>
-              {gameCategories.map((cat: string) => (
+              {/* 2. Añadimos el índice (index) al map para rastrear la posición de cada campo */}
+              {gameCategories.map((cat: string, index: number) => (
                 <View key={cat} style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>{cat.replace('_', ' ').toUpperCase()}</Text>
                   <TextInput 
@@ -71,6 +75,15 @@ export const GameScreen = ({
                     placeholder={`Escribe un ${cat.replace('_', ' ')}`}
                     placeholderTextColor="#52525b"
                     autoCapitalize="none"
+                    // 3. Lógica de salto secuencial del teclado
+                    ref={(el) => { inputRefs.current[index] = el; }}
+                    returnKeyType={index === gameCategories.length - 1 ? 'done' : 'next'}
+                    blurOnSubmit={index === gameCategories.length - 1}
+                    onSubmitEditing={() => {
+                      if (index < gameCategories.length - 1) {
+                        inputRefs.current[index + 1]?.focus();
+                      }
+                    }}
                   />
                 </View>
               ))}

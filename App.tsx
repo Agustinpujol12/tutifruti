@@ -26,7 +26,7 @@ export default function App() {
   const [rounds, setRounds] = useState(3);
   
   // SOLUCIÓN: Las 5 categorías estandarizadas exactas para la base de datos
-  const allCategories = ['paises', 'colores', 'animales', 'frutas_verduras', 'partes_cuerpo'];
+  const allCategories = ['paises', 'colores', 'animales', 'frutas_verduras', 'partes_cuerpo', 'ropa', 'profesiones'];
   const [selectedCategories, setSelectedCategories] = useState<string[]>(allCategories);
 
   const [currentRound, setCurrentRound] = useState(1);
