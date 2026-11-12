@@ -44,6 +44,8 @@ export const ValidationScreen = ({
     return a.player_name.localeCompare(b.player_name);
   });
 
+  const hasUnresolvedDisputes = disputes.length > 0;
+  
   return (
     <View style={[styles.container, { justifyContent: 'flex-start', paddingTop: 60 }]}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 15 }}>
@@ -128,13 +130,30 @@ export const ValidationScreen = ({
         })}
       </ScrollView>
 
-      {isHost ? (
-        <TouchableOpacity style={[styles.primaryButton, { marginTop: 15, opacity: isProcessingNext ? 0.7 : 1 }]} onPress={handleNextRound} disabled={isProcessingNext}>
-          {isProcessingNext ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{currentRound < rounds ? 'Siguiente Ronda' : 'Ver Ganador'}</Text>}
+{isHost ? (
+        <TouchableOpacity 
+          style={[
+            styles.primaryButton, 
+            { marginTop: 15, opacity: (isProcessingNext || hasUnresolvedDisputes) ? 0.5 : 1 }
+          ]} 
+          onPress={handleNextRound} 
+          disabled={isProcessingNext || hasUnresolvedDisputes}
+        >
+          {isProcessingNext ? (
+            <ActivityIndicator color="#fff" />
+          ) : hasUnresolvedDisputes ? (
+            <Text style={styles.buttonText}>Faltan Votos</Text>
+          ) : (
+            <Text style={styles.buttonText}>{currentRound < rounds ? 'Siguiente Ronda' : 'Ver Ganador'}</Text>
+          )}
         </TouchableOpacity>
       ) : (
         <View style={{ marginTop: 15, padding: 16, alignItems: 'center' }}>
-          <Text style={styles.waitingText}>Esperando que el creador continúe...</Text>
+          <Text style={styles.waitingText}>
+            {hasUnresolvedDisputes 
+              ? 'Esperando votos de los jugadores...' 
+              : 'Esperando que el creador continúe...'}
+          </Text>
         </View>
       )}
     </View>

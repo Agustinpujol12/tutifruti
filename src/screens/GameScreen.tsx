@@ -3,7 +3,7 @@ import React, { useRef } from 'react';
 import { styles } from '../styles/globalStyles';
 
 export const GameScreen = ({
-  currentLetter, currentRound, rounds, countdown, gameCategories, answers, setAnswers, handleBasta, handleEndGameEarly, roundTime, myTotalScore
+  currentLetter, currentRound, rounds, countdown, gameCategories, answers, setAnswers, handleBasta, handleEndGameEarly, roundTime, myTotalScore, roundData
 }: any) => {
   // 1. Inicializamos la referencia para controlar los saltos del teclado
 const inputRefs = useRef<any[]>([]);
@@ -26,11 +26,28 @@ const inputRefs = useRef<any[]>([]);
       style={[styles.container, { justifyContent: 'flex-start', paddingTop: 60, paddingBottom: 0 }]} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {countdown !== null ? (
+{countdown !== null ? (
         <View style={styles.waitingContainer}>
           <Text style={styles.waitingSubtext}>RONDA {currentRound} DE {rounds}</Text>
           <Text style={styles.spinLetter}>{countdown}</Text>
           <Text style={styles.waitingText}>La letra será: ?</Text>
+          
+          {/* Tabla de posiciones inyectada */}
+          <View style={{ marginTop: 40, width: '100%', backgroundColor: '#18181b', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#27272a' }}>
+            <Text style={{ color: '#fff', fontSize: 14, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' }}>
+              POSICIONES ACTUALES
+            </Text>
+            {roundData && roundData.length > 0 ? (
+              roundData.map((player: any, index: number) => (
+                <View key={index} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#27272a' }}>
+                  <Text style={{ color: '#a1a1aa', fontSize: 16 }}>{player.player_name}</Text>
+                  <Text style={{ color: '#10b981', fontSize: 16, fontWeight: 'bold' }}>{player.total_score || 0} pts</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={{ color: '#52525b', textAlign: 'center' }}>Cargando puntajes...</Text>
+            )}
+          </View>
         </View>
       ) : (
         <>

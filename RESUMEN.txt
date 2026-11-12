@@ -58,3 +58,26 @@ Commit 7
 - Corrección de puntaje doble asignando autoridad exclusiva del timeout al Host.
 - Refactor de ValidationScreen a vista estática de resultados calculados.
 - Estandarización del array estricto de las 5 categorías MVP.
+
+Commit 8
+
+- Reemplazo de lógica local por Supabase Presence para una detección de desconexiones infalible.
+- Implementación de victoria automática (forfeit) tras 5 segundos de caída de conexión del oponente.
+- Refactor del temporizador de ronda a modelo absoluto (Date.now()) para mitigar desincronizaciones por app en segundo plano.
+- Agregado de AppState listener exclusivo para recuperar el estado de forfeit al restaurar la app minimizada.
+- Resolución de 'memory leaks' y canales fantasma mediante supabase.removeAllChannels().
+- Cierre asíncrono estricto de ronda (async/await) para evitar bloqueos del timer en 0.
+
+Commit 9
+
+- Actualización de la función RPC de Supabase (calculate_round_scores) para extraer dinámicamente las categorías desde el JSON de respuestas, eliminando arreglos estáticos obsoletos.
+- Inserción masiva de diccionarios normalizados para las categorías "ropa" y "profesiones" (con flexión de género y regionalismos).
+- Inclusión de .trim() y .toLowerCase() en el frontend para evitar fallos de validación por espacios o mayúsculas en las entradas del usuario.
+
+Commit 10
+
+- SQL (vote_disputed_word): Ajuste del umbral de votos para excluir al proponente, evitando votaciones bloqueadas en partidas de 2 jugadores.
+- SQL (vote_disputed_word): Implementación de puntaje dinámico (20 o 10 puntos) al aprobar una palabra en disputa, evaluando aciertos de los rivales.
+- UI (ValidationScreen): Ordenamiento estricto forzando el panel del jugador local al tope superior y el resto alfabéticamente.
+- UI (ValidationScreen): Agregado de resaltado visual diferencial (borde, fondo y etiqueta "TÚ") para identificar rápidamente los resultados propios.
+- Fix: Corrección de error de sintaxis JSX por comentarios mal ubicados que rompían el renderizado del ScrollView.

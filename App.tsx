@@ -11,6 +11,7 @@ import { LobbyScreen } from './src/screens/LobbyScreen';
 import { GameScreen } from './src/screens/GameScreen';
 import { ValidationScreen } from './src/screens/ValidationScreen';
 import { WinnerScreen } from './src/screens/WinnerScreen';
+import { LetterRaffle } from './src/components/LetterRaffle';
 
 export default function App() {
   const [name, setName] = useState('');
@@ -26,7 +27,7 @@ export default function App() {
   const [rounds, setRounds] = useState(3);
   
   // SOLUCIÓN: Las 5 categorías estandarizadas exactas para la base de datos
-  const allCategories = ['paises', 'colores', 'animales', 'frutas_verduras', 'partes_cuerpo', 'ropa', 'profesiones'];
+  const allCategories = ['paises', 'colores', 'animales', 'frutas_verduras', 'partes_cuerpo', 'ropa', 'profesiones', 'comida', 'nombres_masculinos'];
   const [selectedCategories, setSelectedCategories] = useState<string[]>(allCategories);
 
   const [currentRound, setCurrentRound] = useState(1);
@@ -46,6 +47,7 @@ export default function App() {
   
   const [isFinishedGame, setIsFinishedGame] = useState(false);
   const [finalResults, setFinalResults] = useState<any[]>([]);
+  const [isRaffling, setIsRaffling] = useState(false);
 
   const [isHost, setIsHost] = useState(false);
   // NUEVO: Referencia para evitar el estado fantasma en el WebSocket
@@ -122,29 +124,39 @@ useEffect(() => {
     setMyTotalScore(0);
   };
 
-  const startCountdownSequence = (finalLetter: string, activeGameId: string) => {
-    setCurrentLetter(finalLetter);
-    setActiveLetter(null); 
-    setCountdown(5);
+const startCountdownSequence = async (finalLetter: string, activeGameId: string) => {
+  setCurrentLetter(finalLetter);
+  setActiveLetter(null);
+  
+  // NUEVO: Forzar actualización de puntajes antes del conteo
+  const { data } = await supabase.from('game_rounds')
+    .select('player_name, total_score')
+    .eq('game_id', activeGameId);
+  if (data) setRoundData(data);
 
-    if (roundTimerRef.current) clearInterval(roundTimerRef.current);
-    setRoundTime(null);
+  if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+  setRoundTime(null);
+  
+  setCountdown(5);
+  let currentCount = 5;
+  const timer = setInterval(() => {
+    currentCount--;
+    if (currentCount > 0) {
+      setCountdown(currentCount);
+    } else {
+      clearInterval(timer);
+      setCountdown(null);
+      setIsRaffling(true);
+    }
+  }, 1000);
+};
 
-    let currentCount = 5;
-    const timer = setInterval(() => {
-      currentCount--;
-      if (currentCount > 0) {
-        setCountdown(currentCount);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      } else {
-        clearInterval(timer);
-        setCountdown(null);
-        setActiveLetter(finalLetter); 
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        startRoundTimer(60, activeGameId);
-      }
-    }, 1000);
-  };
+const handleRaffleFinish = () => {
+  // 3. Oculta la ruleta e inicia el juego inmediatamente
+  setIsRaffling(false);
+  setActiveLetter(currentLetterRef.current); 
+  startRoundTimer(60, gameId); // Asegúrate de que esta variable 'gameId' coincide con el estado de tu sala
+};
 
   const startRoundTimer = (duration: number, activeGameId: string) => {
     const endTime = Date.now() + duration * 1000;
@@ -438,7 +450,7 @@ const subscribeToGame = (currentId: string) => {
     setIsProcessingNext(false);
   };
 
-  const handleRematch = async () => {
+const handleRematch = async () => {
     await supabase.from('game_rounds')
       .update({ total_score: 0, answers: {} })
       .eq('game_id', gameId);
@@ -457,36 +469,37 @@ const subscribeToGame = (currentId: string) => {
   if (isFinishedGame) return <WinnerScreen finalResults={finalResults} onLeave={handleLeaveGame} isHost={isHost} handleRematch={handleRematch} />;
   
   if (isValidating) return <ValidationScreen
-  currentLetter={currentLetterRef.current}
-  currentRound={currentRound}
-  rounds={rounds}
-  roundData={roundData}
-  gameCategories={allCategories}
-  handleNextRound={handleNextRound}
-  isProcessingNext={isProcessingNext}
-  handleEndGameEarly={handleEndGameEarly}
-  isHost={isHostRef.current}
+    currentLetter={currentLetterRef.current}
+    currentRound={currentRound}
+    rounds={rounds}
+    roundData={roundData}
+    gameCategories={allCategories}
+    handleNextRound={handleNextRound}
+    isProcessingNext={isProcessingNext}
+    handleEndGameEarly={handleEndGameEarly}
+    isHost={isHostRef.current}
+    currentId={gameId}
+    name={name}
+    refreshData={async () => {
+      const { data } = await supabase.from('game_rounds')
+        .select('player_name, answers, scores, total_score')
+        .eq('game_id', gameId);
+      if (data) {
+        setRoundData(data);
+        const myData = data.find(d => d.player_name === name);
+        if (myData) setMyTotalScore(myData.total_score || 0);
+      }
+    }}
+  />;
   
-  // NUEVAS PROPS:
-currentId={gameId}
-  name={name}
-  refreshData={async () => {
-    // Esta función recarga los puntos si una palabra es aprobada por votación
-    const { data } = await supabase.from('game_rounds')
-      .select('player_name, answers, scores, total_score')
-      .eq('game_id', gameId);
-    if (data) {
-      setRoundData(data);
-      const myData = data.find(d => d.player_name === name);
-      if (myData) setMyTotalScore(myData.total_score || 0);
-    }
-  }}
-/>
+  // NUEVO: La ruleta intercepta el flujo antes de renderizar GameScreen
+  if (isRaffling) return <LetterRaffle targetLetter={currentLetterRef.current || currentLetter || '?'} onFinish={handleRaffleFinish} />;
   
-  if (isGameStarted) return <GameScreen 
+if (isGameStarted) return <GameScreen 
     currentLetter={activeLetter} currentRound={currentRound} rounds={rounds} countdown={countdown} 
     gameCategories={gameCategories} answers={answers} setAnswers={setAnswers} handleBasta={handleBasta} handleEndGameEarly={handleEndGameEarly} 
     roundTime={roundTime} myTotalScore={myTotalScore} 
+    roundData={roundData} /* NUEVO: Pasamos el historial de todos */
   />;
   
   if (isRegistered) return <LobbyScreen 
