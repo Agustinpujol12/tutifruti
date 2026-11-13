@@ -4,7 +4,7 @@ import { styles } from '../styles/globalStyles';
 export const LobbyScreen = ({
   name, roomCode, joinCode, setJoinCode, isLoading, showModal, setShowModal,
   maxPlayers, setMaxPlayers, rounds, setRounds, selectedCategories, toggleCategory,
-  allCategories, handleCreateGame, handleJoinGame, handleLeaveGame
+  allCategories, handleCreateGame, handleJoinGame, handleLeaveGame,letterMode, setLetterMode
 }: any) => (
   <View style={styles.container}>
     <View style={styles.header}>
@@ -74,6 +74,25 @@ export const LobbyScreen = ({
               );
             })}
           </View>
+
+          <View style={{ marginBottom: 20 }}>
+<Text style={styles.inputLabel}>Letras permitidas:</Text>
+  <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+    <TouchableOpacity 
+      style={[styles.primaryButton, letterMode === 'easy' ? { opacity: 1 } : { opacity: 0.4, backgroundColor: '#3f3f46' }]} 
+      onPress={() => setLetterMode('easy')}
+    >
+      <Text style={styles.buttonText}>Fáciles</Text>
+    </TouchableOpacity>
+    
+    <TouchableOpacity 
+      style={[styles.primaryButton, letterMode === 'all' ? { opacity: 1 } : { opacity: 0.4, backgroundColor: '#3f3f46' }]} 
+      onPress={() => setLetterMode('all')}
+    >
+      <Text style={styles.buttonText}>Todas</Text>
+    </TouchableOpacity>
+  </View>
+</View>
 
           <TouchableOpacity style={[styles.primaryButton, {marginTop: 20}]} onPress={handleCreateGame}>
             <Text style={styles.buttonText}>Confirmar y Crear</Text>

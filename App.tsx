@@ -27,7 +27,7 @@ export default function App() {
   const [rounds, setRounds] = useState(3);
   
   // SOLUCIÓN: Las 5 categorías estandarizadas exactas para la base de datos
-  const allCategories = ['paises', 'colores', 'animales', 'frutas_verduras', 'partes_cuerpo', 'ropa', 'profesiones', 'comida', 'nombres_masculinos'];
+  const allCategories = ['paises', 'colores', 'animales', 'frutas_verduras', 'partes_cuerpo', 'ropa', 'profesiones', 'comida', 'nombres_masculinos', 'nombres_femeninos', 'cosas'];
   const [selectedCategories, setSelectedCategories] = useState<string[]>(allCategories);
 
   const [currentRound, setCurrentRound] = useState(1);
@@ -327,7 +327,7 @@ const subscribeToGame = (currentId: string) => {
     setIsRegistered(true);
   };
 
-  const handleCreateGame = async () => {
+const handleCreateGame = async () => {
     if (selectedCategories.length === 0) {
       Alert.alert('Error', 'Selecciona al menos una categoría');
       return;
@@ -349,6 +349,9 @@ const subscribeToGame = (currentId: string) => {
     
     const { data: game } = await supabase.from('games').select('id, categories').eq('room_code', code).single();
     if (game) {
+      // NUEVO: Actualizamos la sala creada por la RPC para inyectarle la configuración de letras
+      await supabase.from('games').update({ letter_mode: letterMode }).eq('id', game.id);
+
       await supabase.from('game_rounds').insert({ game_id: game.id, player_name: name });
       setGameId(game.id);
       setIsHost(true);
@@ -367,7 +370,7 @@ const subscribeToGame = (currentId: string) => {
     }
     setIsLoading(true);
 
-    const { data: game, error: gameError } = await supabase.from('games').select('id, status, max_players, categories, total_rounds, current_round').eq('room_code', code).single();
+    const { data: game, error: gameError } = await supabase.from('games').select('id, status, max_players, categories, total_rounds, current_round, letter_mode').eq('room_code', code).single();
     if (gameError || !game || game.status !== 'waiting') {
       Alert.alert('Error', 'Sala no encontrada o iniciada');
       setIsLoading(false);
@@ -390,9 +393,9 @@ const subscribeToGame = (currentId: string) => {
     setRoomCode(code);
     subscribeToGame(game.id); 
 
-    if (count !== null && count + 1 === game.max_players) {
-      const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-      const randomLetter = abc[Math.floor(Math.random() * abc.length)];
+if (count !== null && count + 1 === game.max_players) {
+      // NUEVO: Usa la función en lugar del string hardcodeado
+      const randomLetter = getRandomLetter(game.letter_mode || 'easy');
       
       await supabase.from('games').update({ 
         status: 'playing', 
@@ -416,12 +419,12 @@ const subscribeToGame = (currentId: string) => {
     await supabase.from('games').update({ status: 'finished' }).eq('id', gameId);
   };
 
-  const handleNextRound = async () => {
+const handleNextRound = async () => {
     setIsProcessingNext(true);
-    const { data: g } = await supabase.from('games')
-      .select('status, current_round, total_rounds, used_letters')
-      .eq('id', gameId)
-      .single();
+const { data: g } = await supabase.from('games')
+  .select('status, current_round, total_rounds, used_letters, letter_mode')
+  .eq('id', gameId)
+  .single();
       
     if (!g || g.status !== 'validating') {
       setIsProcessingNext(false);
@@ -431,16 +434,13 @@ const subscribeToGame = (currentId: string) => {
     await supabase.from('game_rounds').update({ answers: {} }).eq('game_id', gameId);
 
     if (g.current_round < g.total_rounds) {
-      const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-      let newLetter = "";
-      while (!newLetter || (g.used_letters && g.used_letters.includes(newLetter))) {
-        newLetter = abc[Math.floor(Math.random() * abc.length)];
-      }
+      // NUEVO: Pasa las letras usadas para que la función las excluya y elija según el modo
+      const newLetter = getRandomLetter(g.letter_mode || 'easy', g.used_letters || "");
       
       await supabase.from('games').update({ 
         status: 'playing', 
         current_round: g.current_round + 1, 
-        used_letters: g.used_letters + newLetter, 
+        used_letters: (g.used_letters || "") + newLetter, 
         current_letter: newLetter 
       }).eq('id', gameId);
     } else {
@@ -455,8 +455,8 @@ const handleRematch = async () => {
       .update({ total_score: 0, answers: {} })
       .eq('game_id', gameId);
 
-    const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const randomLetter = abc[Math.floor(Math.random() * abc.length)];
+    // NUEVO: Usa la función
+    const randomLetter = getRandomLetter(letterMode);
 
     await supabase.from('games').update({ 
       status: 'playing', 
@@ -465,6 +465,18 @@ const handleRematch = async () => {
       current_letter: randomLetter 
     }).eq('id', gameId);
   };
+  
+  const [letterMode, setLetterMode] = useState('easy'); // 'easy' o 'all'
+
+const getRandomLetter = (mode: string, usedLetters: string = "") => {
+  // 'easy' excluye H, K, W, X, Y, Z (y Ñ si no la tenías)
+  const abc = mode === 'easy' ? 'ABCDEFGJILMNOPQRSTUV' : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  // Lógica opcional para evitar repetir letras usadas:
+  const available = abc.split('').filter(l => !usedLetters.includes(l));
+  const finalAbc = available.length > 0 ? available.join('') : abc;
+  
+  return finalAbc[Math.floor(Math.random() * finalAbc.length)];
+};
 
   if (isFinishedGame) return <WinnerScreen finalResults={finalResults} onLeave={handleLeaveGame} isHost={isHost} handleRematch={handleRematch} />;
   
@@ -506,7 +518,8 @@ if (isGameStarted) return <GameScreen
     name={name} roomCode={roomCode} joinCode={joinCode} setJoinCode={setJoinCode} isLoading={isLoading} 
     showModal={showModal} setShowModal={setShowModal} maxPlayers={maxPlayers} setMaxPlayers={setMaxPlayers} 
     rounds={rounds} setRounds={setRounds} selectedCategories={selectedCategories} toggleCategory={toggleCategory} 
-    allCategories={allCategories} handleCreateGame={handleCreateGame} handleJoinGame={handleJoinGame} handleLeaveGame={handleLeaveGame} 
+    allCategories={allCategories} handleCreateGame={handleCreateGame} handleJoinGame={handleJoinGame} handleLeaveGame={handleLeaveGame} letterMode={letterMode}
+  setLetterMode={setLetterMode}
   />;
 
   return <LoginScreen name={name} setName={setName} onRegister={handleRegister} />;
